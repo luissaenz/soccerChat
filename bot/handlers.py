@@ -7,7 +7,7 @@ from bot.db import (
     add_match, get_recent_matches, add_comment
 )
 from bot.elo import update_elos_for_match, suggest_balanced_teams
-from bot.ai import chat
+from bot.ai import chat, analyze_comment
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -179,6 +179,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             player_name=user_name,
             content=text
         )
+
+        # Analizar si el comentario habla de rendimiento y ajustar ELO
+        result = await analyze_comment(text, user_name)
+        if result:
+            adj_lines = [f"  {a['player']} {a['delta']:+d} ({a['reason']})" for a in result["adjustments"]]
+            await message.reply_text(
+                f"🎙️ {result['reply']}\n\n📊 ELO actualizado:\n" + "\n".join(adj_lines)
+            )
         return
 
     # Limpiar la mención del texto
