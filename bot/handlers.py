@@ -7,7 +7,7 @@ from bot.db import (
     add_match, get_recent_matches, add_comment
 )
 from bot.elo import update_elos_for_match, suggest_balanced_teams
-from bot.ai import chat, analyze_comment
+from bot.ai import chat, analyze_comment, detect_match_result
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -180,7 +180,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             content=text
         )
 
-        # Analizar si el comentario habla de rendimiento y ajustar ELO
+        # Primero: detectar si es un resultado de partido
+        match_result = await detect_match_result(text, user_name)
+        if match_result:
+            winner_label = (
+                match_result["label_a"] if match_result["score_a"] > match_result["score_b"]
+                else match_result["label_b"] if match_result["score_b"] > match_result["score_a"]
+                else "Empate"
+            )
+            await message.reply_text(
+                f"⚽ *Partido #{match_result['match_id']} registrado!*\n\n"
+                f"🔵 *{match_result['label_a']}:* {', '.join(match_result['team_a'])}\n"
+                f"🔴 *{match_result['label_b']}:* {', '.join(match_result['team_b'])}\n"
+                f"📊 Resultado: {match_result['score_a']} - {match_result['score_b']}\n\n"
+                f"🎙️ _{match_result['reply']}_\n\n"
+                f"ELOs actualizados. Usá /jugadores para ver el ranking.",
+                parse_mode="Markdown"
+            )
+            return
+
+        # Segundo: analizar si el comentario habla de rendimiento y ajustar ELO
         result = await analyze_comment(text, user_name)
         if result:
             adj_lines = [f"  {a['player']} {a['delta']:+d} ({a['reason']})" for a in result["adjustments"]]

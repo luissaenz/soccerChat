@@ -3,7 +3,8 @@ import json
 import logging
 import httpx
 from bot.prompts import build_system_prompt
-from bot.db import get_all_players, get_recent_matches, get_recent_comments, update_player_elo, get_player_by_name
+from bot.db import get_all_players, get_recent_matches, get_recent_comments, update_player_elo, get_player_by_name, add_player, add_match
+from bot.elo import update_elos_for_match
 
 logger = logging.getLogger(__name__)
 
@@ -160,4 +161,92 @@ async def analyze_comment(comment: str, author: str) -> dict | None:
 
     except (json.JSONDecodeError, KeyError, httpx.HTTPError) as e:
         logger.warning(f"Error analizando comentario: {e}")
+        return None
+
+
+MATCH_DETECT_PROMPT = """Sos un parser de resultados de fútbol. Tu ÚNICA tarea es detectar si el mensaje contiene información de un partido jugado (formación de equipos + resultado).
+
+Si el mensaje describe un partido con equipos y resultado, respondé con este JSON:
+{{"is_match": true, "team_a": ["Nombre1", "Nombre2", ...], "team_b": ["Nombre3", "Nombre4", ...], "score_a": 3, "score_b": 2, "team_a_label": "Claro", "team_b_label": "Oscuro", "reply": "comentario breve y sarcástico sobre el resultado como DT"}}
+
+Reglas:
+- team_a y team_b deben contener los NOMBRES de los jugadores (no apodos del equipo).
+- Si dice "ganó Claro" o "ganó Oscuro" o similar, asegurate de que el score refleje eso.
+- Si no hay score explícito pero dice quién ganó, poné 1-0.
+- reply: debe ser sarcástico, en español rioplatense, breve (1-2 oraciones).
+
+Si el mensaje NO describe un partido, respondé:
+{{"is_match": false}}
+
+IMPORTANTE: Respondé SOLO el JSON, sin markdown, sin texto adicional.
+
+Mensaje de [{author}]: {message}"""
+
+
+async def detect_match_result(message: str, author: str) -> dict | None:
+    """
+    Detecta si un mensaje contiene un resultado de partido.
+    Si lo detecta, registra el partido, auto-registra jugadores nuevos,
+    actualiza ELOs y retorna info para responder.
+    Retorna None si no es un partido.
+    """
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/soccer-chat-bot",
+        "X-Title": "SoccerChat DT Bot",
+    }
+
+    payload = {
+        "model": OPENROUTER_MODEL,
+        "messages": [{"role": "user", "content": MATCH_DETECT_PROMPT.format(author=author, message=message)}],
+        "max_tokens": 400,
+        "temperature": 0.3,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(OPENROUTER_URL, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            raw = data["choices"][0]["message"]["content"].strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            result = json.loads(raw)
+
+            if not result.get("is_match"):
+                return None
+
+            team_a = result["team_a"]
+            team_b = result["team_b"]
+            score_a = int(result["score_a"])
+            score_b = int(result["score_b"])
+
+            # Auto-registrar jugadores nuevos
+            for name in team_a + team_b:
+                existing = await get_player_by_name(name)
+                if not existing:
+                    await add_player(name=name)
+
+            # Registrar partido y actualizar ELOs
+            match_id = await add_match(team_a, team_b, score_a, score_b)
+            await update_elos_for_match(team_a, team_b, score_a, score_b)
+
+            label_a = result.get("team_a_label", "A")
+            label_b = result.get("team_b_label", "B")
+            reply = result.get("reply", "Partido registrado.")
+
+            return {
+                "match_id": match_id,
+                "team_a": team_a,
+                "team_b": team_b,
+                "score_a": score_a,
+                "score_b": score_b,
+                "label_a": label_a,
+                "label_b": label_b,
+                "reply": reply,
+            }
+
+    except (json.JSONDecodeError, KeyError, httpx.HTTPError) as e:
+        logger.warning(f"Error detectando partido: {e}")
         return None
