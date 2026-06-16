@@ -1,4 +1,6 @@
 import os
+import sys
+import asyncio
 import logging
 from dotenv import load_dotenv
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
@@ -61,4 +63,7 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.version_info >= (3, 12):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
     main()
