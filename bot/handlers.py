@@ -5,7 +5,8 @@ from telegram.ext import ContextTypes
 from bot.db import (
     add_player, get_all_players, get_player_by_name,
     add_match, get_recent_matches, add_comment,
-    add_alias, get_aliases_for_player
+    add_alias, get_aliases_for_player,
+    link_telegram_to_player, get_player_by_telegram_id
 )
 from bot.elo import update_elos_for_match, suggest_balanced_teams
 from bot.ai import chat, analyze_comment, detect_match_result
@@ -255,6 +256,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text(response)
         return
 
+    # Detectar presentaciones: "soy Korea", "yo soy el Cachi", "me llamo Pancho", etc.
+    presentation_match = re.match(
+        r"(?:yo\s+)?(?:soy|me llamo|me dicen|soy el|soy la)\s+(.+)",
+        text_lower.strip()
+    )
+    if presentation_match:
+        claimed_name = presentation_match.group(1).strip().rstrip(".!,")
+        # Buscar si ese nombre existe como jugador registrado
+        player = await get_player_by_name(claimed_name)
+        if player:
+            telegram_id = message.from_user.id
+            telegram_username = message.from_user.username
+            # Verificar que no esté ya vinculado a otro
+            existing_link = await get_player_by_telegram_id(telegram_id)
+            if existing_link and existing_link["id"] == player["id"]:
+                await message.reply_text(f"Ya te tengo registrado como {player['name']}. 👍")
+            elif existing_link:
+                await message.reply_text(
+                    f"Ya estás vinculado como {existing_link['name']}. "
+                    f"Si querés cambiar, pedile al admin."
+                )
+            else:
+                await link_telegram_to_player(player["id"], telegram_id, telegram_username)
+                await message.reply_text(
+                    f"✅ Listo, {player['name']}! Te vinculé con tu cuenta de Telegram.\n"
+                    f"Ahora te reconozco automáticamente y puedo darte stats personalizadas."
+                )
+            return
+
     if not is_mention and not is_mister and not is_reply_to_bot:
         # Guardar como comentario para contexto futuro
         user_name = message.from_user.first_name or message.from_user.username or "Anónimo"
@@ -294,7 +324,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Limpiar la mención del texto
     clean_text = text.replace(f"@{bot_username}", "").strip() if bot_username else text
-    user_name = message.from_user.first_name or message.from_user.username or "Anónimo"
+
+    # Intentar identificar al usuario por su Telegram ID
+    linked_player = await get_player_by_telegram_id(message.from_user.id)
+    if linked_player:
+        user_name = linked_player["name"]
+    else:
+        user_name = message.from_user.first_name or message.from_user.username or "Anónimo"
 
     # Guardar comentario
     await add_comment(
@@ -303,6 +339,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         content=clean_text
     )
 
-    # Generar respuesta con IA
+    # Generar respuesta con IA (usa nombre real del jugador si está vinculado)
     response = await chat(clean_text, user_name)
     await message.reply_text(response)

@@ -112,6 +112,14 @@ async def get_player_by_name(name: str) -> Optional[dict]:
     return _rs_first(rs)
 
 
+async def link_telegram_to_player(player_id: int, telegram_id: int, telegram_username: str = None):
+    """Vincula una cuenta de Telegram a un jugador existente."""
+    await _execute(
+        "UPDATE players SET telegram_id = ?, telegram_username = ? WHERE id = ?",
+        [telegram_id, telegram_username, player_id]
+    )
+
+
 async def get_player_by_telegram_id(telegram_id: int) -> Optional[dict]:
     rs = await _execute("SELECT * FROM players WHERE telegram_id = ?", [telegram_id])
     return _rs_first(rs)
