@@ -161,15 +161,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_username = context.bot.username
     text = message.text
 
-    # Responder solo si mencionan al bot o es reply a un mensaje del bot
+    # Responder si mencionan al bot, le dicen "mister", o es reply a un mensaje del bot
+    text_lower = text.lower()
     is_mention = bot_username and f"@{bot_username}" in text
+    is_mister = "mister" in text_lower
     is_reply_to_bot = (
         message.reply_to_message and
         message.reply_to_message.from_user and
         message.reply_to_message.from_user.id == context.bot.id
     )
 
-    if not is_mention and not is_reply_to_bot:
+    if not is_mention and not is_mister and not is_reply_to_bot:
         # Guardar como comentario para contexto futuro
         user_name = message.from_user.first_name or message.from_user.username or "Anónimo"
         await add_comment(
