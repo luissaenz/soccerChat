@@ -9,6 +9,7 @@ from bot.db import (
 )
 from bot.elo import update_elos_for_match, suggest_balanced_teams
 from bot.ai import chat, analyze_comment, detect_match_result
+from bot.analyst import format_player_report, format_full_leaderboard, analyst_chat
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -20,9 +21,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/resultado <equipoA> <golA> - <equipoB> <golB> - Cargar resultado\n"
         "/equipos <nombre1, nombre2, ...> - Armar equipos\n"
         "/historial - Últimos partidos\n"
-        "/alias <nombre> <apodo> - Registrar alias (ej: /alias Korea Koreano)\n\n"
+        "/alias <nombre> <apodo> - Registrar alias\n"
+        "/stats <nombre> - Ficha estadística de un jugador 📊\n"
+        "/tabla - Tabla de posiciones con stats completas 📈\n"
+        "/analisis <pregunta> - Preguntale al Analista 🧠\n\n"
         "También pueden escribir los equipos y resultado en texto libre y yo los registro.\n"
-        "Mencionenme o digan 'mister' y les contesto con la verdad que no quieren escuchar. 😏"
+        "Mencionenme o digan 'mister' y les contesto con la verdad que no quieren escuchar. 😏\n"
+        "Digan 'analista' y responde El Analista con datos fríos. 📊"
     )
 
 
@@ -187,6 +192,39 @@ async def alias_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ficha estadística de un jugador: /stats <nombre>"""
+    if not context.args:
+        await update.message.reply_text("Formato: /stats <nombre>\nEjemplo: /stats Korea")
+        return
+
+    name = " ".join(context.args)
+    report = await format_player_report(name)
+    await update.message.reply_text(report, parse_mode="Markdown")
+
+
+async def tabla_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Tabla de posiciones con stats completas."""
+    table = await format_full_leaderboard()
+    await update.message.reply_text(table, parse_mode="Markdown")
+
+
+async def analisis_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Pregunta libre al Analista: /analisis <pregunta>"""
+    if not context.args:
+        await update.message.reply_text(
+            "Formato: /analisis <pregunta>\n"
+            "Ejemplo: /analisis ¿Quién es el jugador más consistente?\n"
+            "Ejemplo: /analisis Compará a Korea con Esteban"
+        )
+        return
+
+    question = " ".join(context.args)
+    await update.message.reply_text("📊 Analizando datos...")
+    response = await analyst_chat(question)
+    await update.message.reply_text(response)
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Maneja mensajes que mencionan al bot o son respuestas a él."""
     if not update.message or not update.message.text:
@@ -200,11 +238,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text_lower = text.lower()
     is_mention = bot_username and f"@{bot_username}" in text
     is_mister = "mister" in text_lower
+    is_analyst = "analista" in text_lower
     is_reply_to_bot = (
         message.reply_to_message and
         message.reply_to_message.from_user and
         message.reply_to_message.from_user.id == context.bot.id
     )
+
+    # Si mencionan al "analista", responde El Analista con datos
+    if is_analyst:
+        user_name = message.from_user.first_name or message.from_user.username or "Anónimo"
+        clean_text = text_lower.replace("analista", "").strip()
+        if not clean_text:
+            clean_text = "Dame un resumen general del estado del grupo"
+        response = await analyst_chat(clean_text)
+        await message.reply_text(response)
+        return
 
     if not is_mention and not is_mister and not is_reply_to_bot:
         # Guardar como comentario para contexto futuro

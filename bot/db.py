@@ -198,3 +198,124 @@ async def get_all_aliases() -> list[dict]:
         "SELECT a.alias, p.name as canonical_name FROM aliases a JOIN players p ON a.player_id = p.id"
     )
     return _rs_to_dicts(rs)
+
+
+# --- Stats / Analytics ---
+
+async def get_player_stats(player_name: str) -> Optional[dict]:
+    """
+    Calcula estadísticas completas de un jugador:
+    wins, losses, draws, winrate, racha actual, mejor/peor ELO, compañeros/rivales frecuentes.
+    """
+    player = await get_player_by_name(player_name)
+    if not player:
+        return None
+
+    all_matches = await get_all_matches()
+    name_lower = player["name"].lower()
+
+    wins = 0
+    losses = 0
+    draws = 0
+    teammates = {}
+    rivals = {}
+    elo_history = [1000.0]
+    streak = 0
+    streak_type = None  # "W" or "L"
+
+    for m in reversed(all_matches):  # oldest first
+        team_a_lower = [n.lower() for n in m["team_a"]]
+        team_b_lower = [n.lower() for n in m["team_b"]]
+
+        if name_lower in team_a_lower:
+            my_team = m["team_a"]
+            opp_team = m["team_b"]
+            my_score, opp_score = m["score_a"], m["score_b"]
+        elif name_lower in team_b_lower:
+            my_team = m["team_b"]
+            opp_team = m["team_a"]
+            my_score, opp_score = m["score_b"], m["score_a"]
+        else:
+            continue
+
+        # Win/loss/draw
+        if my_score > opp_score:
+            wins += 1
+            if streak_type == "W":
+                streak += 1
+            else:
+                streak_type = "W"
+                streak = 1
+        elif my_score < opp_score:
+            losses += 1
+            if streak_type == "L":
+                streak += 1
+            else:
+                streak_type = "L"
+                streak = 1
+        else:
+            draws += 1
+            streak_type = "D"
+            streak = 1
+
+        # Teammates & rivals
+        for t in my_team:
+            if t.lower() != name_lower:
+                teammates[t] = teammates.get(t, 0) + 1
+        for r in opp_team:
+            rivals[r] = rivals.get(r, 0) + 1
+
+    total = wins + losses + draws
+    winrate = round((wins / total) * 100, 1) if total > 0 else 0
+
+    top_teammates = sorted(teammates.items(), key=lambda x: x[1], reverse=True)[:3]
+    top_rivals = sorted(rivals.items(), key=lambda x: x[1], reverse=True)[:3]
+
+    return {
+        "player": player,
+        "wins": wins,
+        "losses": losses,
+        "draws": draws,
+        "total": total,
+        "winrate": winrate,
+        "streak": streak,
+        "streak_type": streak_type or "-",
+        "top_teammates": top_teammates,
+        "top_rivals": top_rivals,
+    }
+
+
+async def get_leaderboard_stats() -> list[dict]:
+    """Rankings con winrate y partidos."""
+    players = await get_all_players()
+    all_matches = await get_all_matches()
+    stats = []
+
+    for p in players:
+        name_lower = p["name"].lower()
+        wins = 0
+        total = 0
+
+        for m in all_matches:
+            team_a_lower = [n.lower() for n in m["team_a"]]
+            team_b_lower = [n.lower() for n in m["team_b"]]
+
+            if name_lower in team_a_lower:
+                total += 1
+                if m["score_a"] > m["score_b"]:
+                    wins += 1
+            elif name_lower in team_b_lower:
+                total += 1
+                if m["score_b"] > m["score_a"]:
+                    wins += 1
+
+        winrate = round((wins / total) * 100, 1) if total > 0 else 0
+        stats.append({
+            "name": p["name"],
+            "elo": p["elo"],
+            "matches": p["matches_played"],
+            "wins": wins,
+            "winrate": winrate,
+        })
+
+    return sorted(stats, key=lambda x: x["elo"], reverse=True)
