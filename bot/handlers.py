@@ -297,11 +297,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Primero: detectar si es un resultado de partido
         match_result = await detect_match_result(text, user_name)
         if match_result:
-            winner_label = (
-                match_result["label_a"] if match_result["score_a"] > match_result["score_b"]
-                else match_result["label_b"] if match_result["score_b"] > match_result["score_a"]
-                else "Empate"
-            )
+            # Si la IA no pudo resolver algunos nombres, preguntar
+            if match_result.get("needs_clarification"):
+                unknown = match_result["unknown_names"]
+                question = match_result["question"]
+                await message.reply_text(
+                    f"🤔 Detecté un partido pero no reconozco a: *{', '.join(unknown)}*\n\n"
+                    f"{question}\n\n"
+                    f"Podés:\n"
+                    f"• Registrarlos con /registrar <nombre>\n"
+                    f"• Agregar alias con /alias <nombre_registrado> <apodo>\n"
+                    f"• Reenviar el mensaje con los nombres correctos",
+                    parse_mode="Markdown"
+                )
+                return
+
             await message.reply_text(
                 f"⚽ *Partido #{match_result['match_id']} registrado!*\n\n"
                 f"🔵 *{match_result['label_a']}:* {', '.join(match_result['team_a'])}\n"

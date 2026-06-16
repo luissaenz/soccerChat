@@ -178,11 +178,14 @@ Reglas:
 - RESOLUCIÓN DE NOMBRES: Si un nombre en el mensaje es una variación obvia de un jugador registrado (diminutivo, apodo, con/sin acento, abreviación), usá el nombre CANÓNICO registrado.
   Ejemplos: "Facu" o "Facundiño" → "Facundo", "Gonza" → "Gonzalo", "Estebancho" → "Esteban", "Dani" → "Daniel", "Rober" → "Roberto", "Cris" → "Christian".
 - Si un nombre tiene un alias explícito en la lista de aliases, usá el nombre canónico.
-- Si aparece un nombre que NO podés asociar a ningún jugador registrado, dejalo tal cual (se registrará como nuevo).
+- Si aparece un nombre que NO podés asociar con certeza a ningún jugador registrado, agregalo a la lista "unknown_names" para preguntar.
 - Si dice "ganó Claro" o "ganó Oscuro" o similar, asegurate de que el score refleje eso.
 - Si no hay score explícito pero dice quién ganó, poné 1-0.
 - Si dice "ganó por X goles" sin score exacto, poné X-0.
 - reply: debe ser sarcástico, en español rioplatense, breve (1-2 oraciones).
+
+Si HAY nombres que no podés resolver, respondé:
+{{"is_match": true, "unknown_names": ["NombreDesconocido1", ...], "question": "pregunta breve pidiendo aclaración sobre esos nombres", ...resto de campos...}}
 
 Si el mensaje NO describe un partido, respondé:
 {{"is_match": false}}
@@ -238,6 +241,16 @@ async def detect_match_result(message: str, author: str) -> dict | None:
 
             if not result.get("is_match"):
                 return None
+
+            # Si la IA no pudo resolver algunos nombres, preguntar
+            unknown = result.get("unknown_names", [])
+            if unknown:
+                question = result.get("question", f"¿Quiénes son: {', '.join(unknown)}? No los tengo registrados.")
+                return {
+                    "needs_clarification": True,
+                    "unknown_names": unknown,
+                    "question": question,
+                }
 
             team_a = result["team_a"]
             team_b = result["team_b"]
