@@ -82,7 +82,7 @@ Analizá el siguiente comentario de un miembro del grupo. Tu tarea:
 2. Si detectás que se habla de alguien, respondé con un JSON así:
    {{"adjustments": [{{"player": "NombreExacto", "delta": 5, "reason": "razón breve"}}], "reply": "tu comentario con humor"}}
    - delta: entre -10 y +10. Positivo si lo elogian, negativo si lo bardean por jugar mal.
-   - player: debe ser el nombre EXACTO de la lista de jugadores registrados.
+   - player: debe ser el nombre CANÓNICO de la lista de jugadores registrados. Si el comentario usa un diminutivo, apodo o variación (ej: "Facu" = "Facundo", "Gonza" = "Gonzalo", "Dani" = "Daniel"), resolvé al nombre registrado.
    - reply: respuesta breve y sarcástica (1-2 oraciones máximo).
 3. Si el comentario NO tiene nada que ver con el desempeño de nadie, respondé:
    {{"adjustments": [], "reply": ""}}
@@ -90,6 +90,7 @@ Analizá el siguiente comentario de un miembro del grupo. Tu tarea:
 IMPORTANTE: Respondé SOLO el JSON, sin markdown, sin texto adicional.
 
 Jugadores registrados: {players}
+Aliases conocidos: {aliases}
 
 Comentarios recientes para contexto: {recent_comments}
 
@@ -107,11 +108,14 @@ async def analyze_comment(comment: str, author: str) -> dict | None:
         return None
 
     player_names = [p["name"] for p in players]
+    aliases = await get_all_aliases()
+    aliases_str = ", ".join(f"{a['alias']}→{a['canonical_name']}" for a in aliases) if aliases else "Ninguno"
     recent = await get_recent_comments(10)
     recent_lines = [f"  {c['player_name']}: \"{c['content']}\"" for c in recent[:5]]
 
     prompt = ANALYZE_PROMPT.format(
         players=", ".join(player_names),
+        aliases=aliases_str,
         recent_comments="\n".join(recent_lines) if recent_lines else "Ninguno",
         author=author,
         comment=comment,
@@ -171,7 +175,10 @@ Si el mensaje describe un partido con equipos y resultado, respondé con este JS
 
 Reglas:
 - team_a y team_b deben contener los NOMBRES de los jugadores (no apodos del equipo).
-- Si un nombre tiene un alias conocido, usá el nombre CANÓNICO (el principal registrado).
+- RESOLUCIÓN DE NOMBRES: Si un nombre en el mensaje es una variación obvia de un jugador registrado (diminutivo, apodo, con/sin acento, abreviación), usá el nombre CANÓNICO registrado.
+  Ejemplos: "Facu" o "Facundiño" → "Facundo", "Gonza" → "Gonzalo", "Estebancho" → "Esteban", "Dani" → "Daniel", "Rober" → "Roberto", "Cris" → "Christian".
+- Si un nombre tiene un alias explícito en la lista de aliases, usá el nombre canónico.
+- Si aparece un nombre que NO podés asociar a ningún jugador registrado, dejalo tal cual (se registrará como nuevo).
 - Si dice "ganó Claro" o "ganó Oscuro" o similar, asegurate de que el score refleje eso.
 - Si no hay score explícito pero dice quién ganó, poné 1-0.
 - Si dice "ganó por X goles" sin score exacto, poné X-0.
