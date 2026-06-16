@@ -5,28 +5,15 @@ Cargadas, apodos, modismos, frases célebres y chistes para condimentar las resp
 
 # --- CARGADAS PARA JUGADORES QUE JUEGAN MAL ---
 CARGADAS_MAL = [
-    "A {nombre} le dicen 'GPS' porque siempre está perdido en la cancha.",
-    "A {nombre} le dicen 'Aeropuerto' porque tiene la pista libre y no despega nunca.",
-    "A {nombre} le dicen 'Delivery' porque siempre entrega la pelota al rival.",
-    "A {nombre} le dicen 'Semáforo' porque está siempre parado y nadie le da bola.",
     "A {nombre} le dicen 'Espejo de corcho' porque tiene menos reflejos que Abbondanzieri con resaca.",
-    "A {nombre} le dicen 'Twingo' porque es feo para jugar y encima es chiquito.",
     "A {nombre} le dicen 'Piquetero' porque tiene menos esfuerzo que uno con plan social.",
     "A {nombre} le dicen 'Las Toninas en abril' porque tiene menos centro que balneario en invierno.",
-    "A {nombre} le dicen 'Kinder abierto' porque tiene menos sorpresa que huevo de chocolate vacío.",
-    "A {nombre} le dicen 'Farmacity' porque cierra menos que una cadena de farmacias.",
     "A {nombre} le dicen 'Atari' porque tiene menos definición que una consola del 80.",
-    "A {nombre} le dicen 'Pila' porque tiene menos patada que una batería.",
-    "A {nombre} le dicen 'Only You' porque es más lento que un tema de los Platters.",
-    "A {nombre} le dicen 'Mueble' porque se queda en el lugar y ni se mueve. En su casa hasta los muebles usan canilleras.",
-    "A {nombre} le dicen 'Caña de pescar' porque le regalaron la primera pelota y fue al pedo.",
     "A {nombre} le dicen 'Radiología' porque con él los radiólogos se llenaron de plata.",
     "{nombre} es tan malo que su doctor le aconsejó dejar el fútbol. No porque esté enfermo, sino porque lo vio jugar.",
-    "A {nombre} tirénle agua que se seca la ballena.",
     "Che {nombre}, sacale la caja a los botines para jugar, muerto.",
     "A {nombre} no le pongas aerosol en la lesión, ponele Blem que es de madera ese muchacho.",
     "{nombre} tiene la mochila puesta todavía. ¡Dejala en el vestuario, crack!",
-    "A {nombre} le dicen 'Bicicleta' porque pedala mucho pero no llega a ningún lado.",
     "A {nombre} le dicen 'Control remoto' porque no hace nada y encima se pierde.",
     "A {nombre} le ponés dos medias de distinto color y se caga a patadas solo.",
 ]
@@ -34,20 +21,8 @@ CARGADAS_MAL = [
 # --- HALAGOS EXAGERADOS PARA JUGADORES BUENOS ---
 HALAGOS = [
     "{nombre} gambetea hasta su propia sombra. Messi le pide tips por DM.",
-    "A {nombre} le dicen 'Pelusa' porque la acaricia como Maradona en México 86.",
-    "{nombre} está tan en forma que podría jugar el Mundial solo y ganar.",
-    "Con {nombre} en la cancha sobran los otros 10. Es DT, jugador y aguatero a la vez.",
-    "{nombre} no corre, levita. La pelota lo busca sola como un imán.",
-    "A {nombre} le dicen 'La Maquina' porque juega como el River del 40.",
-    "{nombre} toca y se va. Touch and go, como Pentrelli en Racing.",
-    "Si {nombre} fuera un poco mejor habría que prohibirlo por ventaja deportiva.",
-    "{nombre} tiene más gambeta que Ortega en una noche de inspiración.",
-    "{nombre} hizo un gol que para festejarlo hay que hacerle una capilla como la de Maradona en Nápoles.",
-    "A {nombre} le dicen 'Champagne' porque tiene más clase que Bilardo brindando en la cancha.",
-    "{nombre} mete más pases filtrados que Riquelme con los ojos cerrados.",
-    "A {nombre} le dicen 'Obra de arte' porque cada jugada suya debería estar en un museo.",
-    "{nombre} está tan encendido que hay que llamar a los bomberos.",
-    "A {nombre} le dicen 'El Maestro' como a Pedernera. Cerebro puro en la cancha.",
+    "Con {nombre} en la cancha sobran los otros 6. Es DT, jugador y aguatero a la vez.",
+    "{nombre} no corre, levita. La pelota lo busca sola como un imán."
 ]
 
 # --- FRASES PARA EMPATES ---
