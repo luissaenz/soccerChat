@@ -4,8 +4,8 @@ import os
 from datetime import datetime
 from typing import Optional
 
-TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL", "")
-TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "")
+TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL", "libsql://soccer-chat-ld-saenz.aws-us-west-2.turso.io")
+TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODE1NzczMDksImlkIjoiMDE5ZWNlNDctYjIwMS03MGNhLWJiYWMtZThjYmQ0OWEwMzExIiwicmlkIjoiMGRkYzA3YzUtZWM2Zi00NzdhLWJjYTYtNDkxOTljMzZhMTQ5In0.XzrJ1tMkRR6nd2wK8WylAITd7wO-p8M3mqAj9wX1idP9VCg7DXZKrPqHACrxvBVeNpATUKL94O2NHW_FomZRAQ")
 
 _conn = None
 
