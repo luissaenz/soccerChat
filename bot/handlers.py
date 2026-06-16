@@ -4,7 +4,8 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from bot.db import (
     add_player, get_all_players, get_player_by_name,
-    add_match, get_recent_matches, add_comment
+    add_match, get_recent_matches, add_comment,
+    add_alias, get_aliases_for_player
 )
 from bot.elo import update_elos_for_match, suggest_balanced_teams
 from bot.ai import chat, analyze_comment, detect_match_result
@@ -12,14 +13,16 @@ from bot.ai import chat, analyze_comment, detect_match_result
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "⚽ Buenas, soy el DT virtual de este grupo de muertos.\n"
+        "⚽ Buenas, soy Mister, el DT virtual de este grupo de muertos.\n"
         "Comandos disponibles:\n"
         "/registrar <nombre> - Sumar jugador\n"
         "/jugadores - Ver ranking ELO\n"
         "/resultado <equipoA> <golA> - <equipoB> <golB> - Cargar resultado\n"
         "/equipos <nombre1, nombre2, ...> - Armar equipos\n"
-        "/historial - Últimos partidos\n\n"
-        "También pueden hablarme mencionándome y les contesto con la verdad que no quieren escuchar. 😏"
+        "/historial - Últimos partidos\n"
+        "/alias <nombre> <apodo> - Registrar alias (ej: /alias Korea Koreano)\n\n"
+        "También pueden escribir los equipos y resultado en texto libre y yo los registro.\n"
+        "Mencionenme o digan 'mister' y les contesto con la verdad que no quieren escuchar. 😏"
     )
 
 
@@ -150,6 +153,38 @@ async def historial_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(f"📅 {m['date'][:10]}: [{team_a_str}] {m['score_a']}-{m['score_b']} [{team_b_str}]")
 
     await update.message.reply_text("📋 *ÚLTIMOS PARTIDOS*\n\n" + "\n".join(lines), parse_mode="Markdown")
+
+
+async def alias_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Formato: /alias NombreCanónico AliasoApodo
+    Ejemplo: /alias Korea Koreano
+    """
+    if not context.args or len(context.args) < 2:
+        await update.message.reply_text(
+            "Formato: /alias NombreRegistrado Apodo\n"
+            "Ejemplo: /alias Korea Koreano\n"
+            "Así cuando alguien diga 'Koreano' el sistema sabe que es Korea."
+        )
+        return
+
+    canonical_name = context.args[0]
+    alias_name = " ".join(context.args[1:])
+
+    player = await get_player_by_name(canonical_name)
+    if not player:
+        await update.message.reply_text(
+            f"No encontré a '{canonical_name}' registrado. Primero registralo con /registrar {canonical_name}"
+        )
+        return
+
+    await add_alias(player["id"], alias_name)
+    aliases = await get_aliases_for_player(player["id"])
+    aliases_str = ", ".join(aliases)
+    await update.message.reply_text(
+        f"✅ Alias '{alias_name}' agregado para {player['name']}.\n"
+        f"Aliases actuales: {aliases_str}"
+    )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):

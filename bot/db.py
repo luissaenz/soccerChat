@@ -47,6 +47,13 @@ async def init_db():
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (match_id) REFERENCES matches(id)
         );
+
+        CREATE TABLE IF NOT EXISTS aliases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_id INTEGER NOT NULL,
+            alias TEXT NOT NULL,
+            FOREIGN KEY (player_id) REFERENCES players(id)
+        );
     """)
     await db.commit()
     await db.close()
@@ -68,7 +75,17 @@ async def add_player(name: str, telegram_username: Optional[str] = None, telegra
 
 async def get_player_by_name(name: str) -> Optional[dict]:
     db = await get_db()
+    # Check canonical name first
     cursor = await db.execute("SELECT * FROM players WHERE LOWER(name) = LOWER(?)", (name,))
+    row = await cursor.fetchone()
+    if row:
+        await db.close()
+        return dict(row)
+    # Check aliases
+    cursor = await db.execute(
+        "SELECT p.* FROM players p JOIN aliases a ON p.id = a.player_id WHERE LOWER(a.alias) = LOWER(?)",
+        (name,)
+    )
     row = await cursor.fetchone()
     await db.close()
     if row:
@@ -174,6 +191,33 @@ async def get_recent_comments(limit: int = 20) -> list[dict]:
 async def get_comments_for_match(match_id: int) -> list[dict]:
     db = await get_db()
     cursor = await db.execute("SELECT * FROM comments WHERE match_id = ? ORDER BY created_at", (match_id,))
+    rows = await cursor.fetchall()
+    await db.close()
+    return [dict(r) for r in rows]
+
+
+# --- Aliases ---
+
+async def add_alias(player_id: int, alias: str):
+    db = await get_db()
+    await db.execute("INSERT INTO aliases (player_id, alias) VALUES (?, ?)", (player_id, alias))
+    await db.commit()
+    await db.close()
+
+
+async def get_aliases_for_player(player_id: int) -> list[str]:
+    db = await get_db()
+    cursor = await db.execute("SELECT alias FROM aliases WHERE player_id = ?", (player_id,))
+    rows = await cursor.fetchall()
+    await db.close()
+    return [r["alias"] for r in rows]
+
+
+async def get_all_aliases() -> list[dict]:
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT a.alias, p.name as canonical_name FROM aliases a JOIN players p ON a.player_id = p.id"
+    )
     rows = await cursor.fetchall()
     await db.close()
     return [dict(r) for r in rows]

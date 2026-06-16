@@ -8,7 +8,7 @@ from bot.db import init_db
 from bot.handlers import (
     start_command, registrar_command, jugadores_command,
     resultado_command, equipos_command, historial_command,
-    handle_message
+    alias_command, handle_message
 )
 
 load_dotenv()
@@ -44,6 +44,7 @@ def main():
     app.add_handler(CommandHandler("resultado", resultado_command))
     app.add_handler(CommandHandler("equipos", equipos_command))
     app.add_handler(CommandHandler("historial", historial_command))
+    app.add_handler(CommandHandler("alias", alias_command))
 
     # Mensajes de texto (no comandos)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

@@ -3,7 +3,7 @@ import json
 import logging
 import httpx
 from bot.prompts import build_system_prompt
-from bot.db import get_all_players, get_recent_matches, get_recent_comments, update_player_elo, get_player_by_name, add_player, add_match
+from bot.db import get_all_players, get_recent_matches, get_recent_comments, update_player_elo, get_player_by_name, add_player, add_match, get_all_aliases
 from bot.elo import update_elos_for_match
 
 logger = logging.getLogger(__name__)
@@ -171,14 +171,19 @@ Si el mensaje describe un partido con equipos y resultado, respondé con este JS
 
 Reglas:
 - team_a y team_b deben contener los NOMBRES de los jugadores (no apodos del equipo).
+- Si un nombre tiene un alias conocido, usá el nombre CANÓNICO (el principal registrado).
 - Si dice "ganó Claro" o "ganó Oscuro" o similar, asegurate de que el score refleje eso.
 - Si no hay score explícito pero dice quién ganó, poné 1-0.
+- Si dice "ganó por X goles" sin score exacto, poné X-0.
 - reply: debe ser sarcástico, en español rioplatense, breve (1-2 oraciones).
 
 Si el mensaje NO describe un partido, respondé:
 {{"is_match": false}}
 
 IMPORTANTE: Respondé SOLO el JSON, sin markdown, sin texto adicional.
+
+Jugadores registrados: {players}
+Aliases conocidos: {aliases}
 
 Mensaje de [{author}]: {message}"""
 
@@ -190,6 +195,11 @@ async def detect_match_result(message: str, author: str) -> dict | None:
     actualiza ELOs y retorna info para responder.
     Retorna None si no es un partido.
     """
+    players = await get_all_players()
+    player_names = [p["name"] for p in players] if players else []
+    aliases = await get_all_aliases()
+    aliases_str = ", ".join(f"{a['alias']}→{a['canonical_name']}" for a in aliases) if aliases else "Ninguno"
+
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -199,7 +209,12 @@ async def detect_match_result(message: str, author: str) -> dict | None:
 
     payload = {
         "model": OPENROUTER_MODEL,
-        "messages": [{"role": "user", "content": MATCH_DETECT_PROMPT.format(author=author, message=message)}],
+        "messages": [{"role": "user", "content": MATCH_DETECT_PROMPT.format(
+            author=author,
+            message=message,
+            players=", ".join(player_names) if player_names else "Ninguno registrado aún",
+            aliases=aliases_str,
+        )}],
         "max_tokens": 400,
         "temperature": 0.3,
     }
