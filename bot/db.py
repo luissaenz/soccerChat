@@ -6,10 +6,14 @@ from typing import Optional
 
 DB_PATH = os.getenv("DB_PATH", "./data/soccer.db")
 
+# Ensure directory exists at module load time
+os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
+
 
 async def get_db() -> aiosqlite.Connection:
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    db = await aiosqlite.connect(DB_PATH)
+    abs_path = os.path.abspath(DB_PATH)
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+    db = await aiosqlite.connect(abs_path)
     db.row_factory = aiosqlite.Row
     await db.execute("PRAGMA journal_mode=WAL")
     return db
