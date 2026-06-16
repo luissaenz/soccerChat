@@ -1,27 +1,40 @@
-import aiosqlite
+import libsql_experimental as libsql
 import json
 import os
 from datetime import datetime
 from typing import Optional
 
-DB_PATH = os.getenv("DB_PATH", "./data/soccer.db")
+TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL", "")
+TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "")
 
-# Ensure directory exists at module load time
-os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
+_conn = None
 
 
-async def get_db() -> aiosqlite.Connection:
-    abs_path = os.path.abspath(DB_PATH)
-    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-    db = await aiosqlite.connect(abs_path)
-    db.row_factory = aiosqlite.Row
-    await db.execute("PRAGMA journal_mode=WAL")
-    return db
+def get_db():
+    global _conn
+    if _conn is None:
+        if TURSO_DATABASE_URL:
+            _conn = libsql.connect(
+                database=TURSO_DATABASE_URL,
+                auth_token=TURSO_AUTH_TOKEN,
+            )
+        else:
+            os.makedirs("./data", exist_ok=True)
+            _conn = libsql.connect(database="./data/soccer.db")
+    return _conn
+
+
+def _row_to_dict(cursor, row) -> dict:
+    """Convert a row tuple to dict using cursor description."""
+    if row is None:
+        return None
+    columns = [desc[0] for desc in cursor.description]
+    return dict(zip(columns, row))
 
 
 async def init_db():
-    db = await get_db()
-    await db.executescript("""
+    db = get_db()
+    db.executescript("""
         CREATE TABLE IF NOT EXISTS players (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -59,97 +72,85 @@ async def init_db():
             FOREIGN KEY (player_id) REFERENCES players(id)
         );
     """)
-    await db.commit()
-    await db.close()
+    db.commit()
 
 
 # --- Players ---
 
 async def add_player(name: str, telegram_username: Optional[str] = None, telegram_id: Optional[int] = None) -> int:
-    db = await get_db()
-    cursor = await db.execute(
+    db = get_db()
+    cursor = db.execute(
         "INSERT INTO players (name, telegram_username, telegram_id) VALUES (?, ?, ?)",
         (name, telegram_username, telegram_id)
     )
-    await db.commit()
-    player_id = cursor.lastrowid
-    await db.close()
-    return player_id
+    db.commit()
+    return cursor.lastrowid
 
 
 async def get_player_by_name(name: str) -> Optional[dict]:
-    db = await get_db()
-    # Check canonical name first
-    cursor = await db.execute("SELECT * FROM players WHERE LOWER(name) = LOWER(?)", (name,))
-    row = await cursor.fetchone()
+    db = get_db()
+    cursor = db.execute("SELECT * FROM players WHERE LOWER(name) = LOWER(?)", (name,))
+    row = cursor.fetchone()
     if row:
-        await db.close()
-        return dict(row)
+        return _row_to_dict(cursor, row)
     # Check aliases
-    cursor = await db.execute(
+    cursor = db.execute(
         "SELECT p.* FROM players p JOIN aliases a ON p.id = a.player_id WHERE LOWER(a.alias) = LOWER(?)",
         (name,)
     )
-    row = await cursor.fetchone()
-    await db.close()
+    row = cursor.fetchone()
     if row:
-        return dict(row)
+        return _row_to_dict(cursor, row)
     return None
 
 
 async def get_player_by_telegram_id(telegram_id: int) -> Optional[dict]:
-    db = await get_db()
-    cursor = await db.execute("SELECT * FROM players WHERE telegram_id = ?", (telegram_id,))
-    row = await cursor.fetchone()
-    await db.close()
+    db = get_db()
+    cursor = db.execute("SELECT * FROM players WHERE telegram_id = ?", (telegram_id,))
+    row = cursor.fetchone()
     if row:
-        return dict(row)
+        return _row_to_dict(cursor, row)
     return None
 
 
 async def get_all_players() -> list[dict]:
-    db = await get_db()
-    cursor = await db.execute("SELECT * FROM players ORDER BY elo DESC")
-    rows = await cursor.fetchall()
-    await db.close()
-    return [dict(r) for r in rows]
+    db = get_db()
+    cursor = db.execute("SELECT * FROM players ORDER BY elo DESC")
+    rows = cursor.fetchall()
+    return [_row_to_dict(cursor, r) for r in rows]
 
 
 async def update_player_elo(player_id: int, new_elo: float, increment_matches: bool = True):
-    db = await get_db()
+    db = get_db()
     if increment_matches:
-        await db.execute(
+        db.execute(
             "UPDATE players SET elo = ?, matches_played = matches_played + 1 WHERE id = ?",
             (new_elo, player_id)
         )
     else:
-        await db.execute("UPDATE players SET elo = ? WHERE id = ?", (new_elo, player_id))
-    await db.commit()
-    await db.close()
+        db.execute("UPDATE players SET elo = ? WHERE id = ?", (new_elo, player_id))
+    db.commit()
 
 
 # --- Matches ---
 
 async def add_match(team_a: list[str], team_b: list[str], score_a: int, score_b: int, notes: Optional[str] = None, date: Optional[str] = None) -> int:
-    db = await get_db()
-    cursor = await db.execute(
+    db = get_db()
+    cursor = db.execute(
         "INSERT INTO matches (team_a, team_b, score_a, score_b, notes, date) VALUES (?, ?, ?, ?, ?, ?)",
         (json.dumps(team_a), json.dumps(team_b), score_a, score_b, notes, date or datetime.now().isoformat())
     )
-    await db.commit()
-    match_id = cursor.lastrowid
-    await db.close()
-    return match_id
+    db.commit()
+    return cursor.lastrowid
 
 
 async def get_recent_matches(limit: int = 10) -> list[dict]:
-    db = await get_db()
-    cursor = await db.execute("SELECT * FROM matches ORDER BY date DESC LIMIT ?", (limit,))
-    rows = await cursor.fetchall()
-    await db.close()
+    db = get_db()
+    cursor = db.execute("SELECT * FROM matches ORDER BY date DESC LIMIT ?", (limit,))
+    rows = cursor.fetchall()
     results = []
     for r in rows:
-        d = dict(r)
+        d = _row_to_dict(cursor, r)
         d["team_a"] = json.loads(d["team_a"])
         d["team_b"] = json.loads(d["team_b"])
         results.append(d)
@@ -157,13 +158,12 @@ async def get_recent_matches(limit: int = 10) -> list[dict]:
 
 
 async def get_all_matches() -> list[dict]:
-    db = await get_db()
-    cursor = await db.execute("SELECT * FROM matches ORDER BY date DESC")
-    rows = await cursor.fetchall()
-    await db.close()
+    db = get_db()
+    cursor = db.execute("SELECT * FROM matches ORDER BY date DESC")
+    rows = cursor.fetchall()
     results = []
     for r in rows:
-        d = dict(r)
+        d = _row_to_dict(cursor, r)
         d["team_a"] = json.loads(d["team_a"])
         d["team_b"] = json.loads(d["team_b"])
         results.append(d)
@@ -173,55 +173,48 @@ async def get_all_matches() -> list[dict]:
 # --- Comments ---
 
 async def add_comment(player_telegram_id: int, player_name: str, content: str, match_id: Optional[int] = None) -> int:
-    db = await get_db()
-    cursor = await db.execute(
+    db = get_db()
+    cursor = db.execute(
         "INSERT INTO comments (match_id, player_telegram_id, player_name, content) VALUES (?, ?, ?, ?)",
         (match_id, player_telegram_id, player_name, content)
     )
-    await db.commit()
-    comment_id = cursor.lastrowid
-    await db.close()
-    return comment_id
+    db.commit()
+    return cursor.lastrowid
 
 
 async def get_recent_comments(limit: int = 20) -> list[dict]:
-    db = await get_db()
-    cursor = await db.execute("SELECT * FROM comments ORDER BY created_at DESC LIMIT ?", (limit,))
-    rows = await cursor.fetchall()
-    await db.close()
-    return [dict(r) for r in rows]
+    db = get_db()
+    cursor = db.execute("SELECT * FROM comments ORDER BY created_at DESC LIMIT ?", (limit,))
+    rows = cursor.fetchall()
+    return [_row_to_dict(cursor, r) for r in rows]
 
 
 async def get_comments_for_match(match_id: int) -> list[dict]:
-    db = await get_db()
-    cursor = await db.execute("SELECT * FROM comments WHERE match_id = ? ORDER BY created_at", (match_id,))
-    rows = await cursor.fetchall()
-    await db.close()
-    return [dict(r) for r in rows]
+    db = get_db()
+    cursor = db.execute("SELECT * FROM comments WHERE match_id = ? ORDER BY created_at", (match_id,))
+    rows = cursor.fetchall()
+    return [_row_to_dict(cursor, r) for r in rows]
 
 
 # --- Aliases ---
 
 async def add_alias(player_id: int, alias: str):
-    db = await get_db()
-    await db.execute("INSERT INTO aliases (player_id, alias) VALUES (?, ?)", (player_id, alias))
-    await db.commit()
-    await db.close()
+    db = get_db()
+    db.execute("INSERT INTO aliases (player_id, alias) VALUES (?, ?)", (player_id, alias))
+    db.commit()
 
 
 async def get_aliases_for_player(player_id: int) -> list[str]:
-    db = await get_db()
-    cursor = await db.execute("SELECT alias FROM aliases WHERE player_id = ?", (player_id,))
-    rows = await cursor.fetchall()
-    await db.close()
-    return [r["alias"] for r in rows]
+    db = get_db()
+    cursor = db.execute("SELECT alias FROM aliases WHERE player_id = ?", (player_id,))
+    rows = cursor.fetchall()
+    return [r[0] for r in rows]
 
 
 async def get_all_aliases() -> list[dict]:
-    db = await get_db()
-    cursor = await db.execute(
+    db = get_db()
+    cursor = db.execute(
         "SELECT a.alias, p.name as canonical_name FROM aliases a JOIN players p ON a.player_id = p.id"
     )
-    rows = await cursor.fetchall()
-    await db.close()
-    return [dict(r) for r in rows]
+    rows = cursor.fetchall()
+    return [_row_to_dict(cursor, r) for r in rows]
