@@ -323,6 +323,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             return
 
+    # Detección de partido: corre siempre, sin importar si mencionaron a mister
+    user_name_detect = message.from_user.first_name or message.from_user.username or "Anónimo"
+    match_result = await detect_match_result(text, user_name_detect)
+    if match_result:
+        if match_result.get("needs_clarification"):
+            unknown = match_result["unknown_names"]
+            question = match_result["question"]
+            await message.reply_text(
+                f"🤔 Detecté un partido pero no reconozco a: *{', '.join(unknown)}*\n\n"
+                f"{question}\n\n"
+                f"Podés:\n"
+                f"• Registrarlos con /registrar <nombre>\n"
+                f"• Agregar alias con /alias <nombre_registrado> <apodo>\n"
+                f"• Reenviar el mensaje con los nombres correctos",
+                parse_mode="Markdown"
+            )
+            return
+
+        await message.reply_text(
+            f"⚽ *Partido #{match_result['match_id']} registrado!*\n\n"
+            f"🔵 *{match_result['label_a']}:* {', '.join(match_result['team_a'])}\n"
+            f"🔴 *{match_result['label_b']}:* {', '.join(match_result['team_b'])}\n"
+            f"📊 Resultado: {match_result['score_a']} - {match_result['score_b']}\n\n"
+            f"🎙️ _{match_result['reply']}_\n\n"
+            f"ELOs actualizados. Usá /jugadores para ver el ranking.",
+            parse_mode="Markdown"
+        )
+        return
+
     if not is_mention and not is_mister and not is_reply_to_bot:
         # Guardar como comentario para contexto futuro
         user_name = message.from_user.first_name or message.from_user.username or "Anónimo"
@@ -331,35 +360,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             player_name=user_name,
             content=text
         )
-
-        # Primero: detectar si es un resultado de partido
-        match_result = await detect_match_result(text, user_name)
-        if match_result:
-            # Si la IA no pudo resolver algunos nombres, preguntar
-            if match_result.get("needs_clarification"):
-                unknown = match_result["unknown_names"]
-                question = match_result["question"]
-                await message.reply_text(
-                    f"🤔 Detecté un partido pero no reconozco a: *{', '.join(unknown)}*\n\n"
-                    f"{question}\n\n"
-                    f"Podés:\n"
-                    f"• Registrarlos con /registrar <nombre>\n"
-                    f"• Agregar alias con /alias <nombre_registrado> <apodo>\n"
-                    f"• Reenviar el mensaje con los nombres correctos",
-                    parse_mode="Markdown"
-                )
-                return
-
-            await message.reply_text(
-                f"⚽ *Partido #{match_result['match_id']} registrado!*\n\n"
-                f"🔵 *{match_result['label_a']}:* {', '.join(match_result['team_a'])}\n"
-                f"🔴 *{match_result['label_b']}:* {', '.join(match_result['team_b'])}\n"
-                f"📊 Resultado: {match_result['score_a']} - {match_result['score_b']}\n\n"
-                f"🎙️ _{match_result['reply']}_\n\n"
-                f"ELOs actualizados. Usá /jugadores para ver el ranking.",
-                parse_mode="Markdown"
-            )
-            return
 
         # Si el mensaje parece un partido pero no se pudo parsear, avisar
         text_lower_check = text.lower()
@@ -377,7 +377,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Segundo: analizar si el comentario habla de rendimiento y ajustar ELO
+        # Analizar si el comentario habla de rendimiento y ajustar ELO
         result = await analyze_comment(text, user_name)
         if result:
             adj_lines = [f"  {a['player']} {a['delta']:+d} ({a['reason']})" for a in result["adjustments"]]
