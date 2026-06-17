@@ -140,6 +140,31 @@ async def update_player_elo(player_id: int, new_elo: float, increment_matches: b
         await _execute("UPDATE players SET elo = ? WHERE id = ?", [new_elo, player_id])
 
 
+async def reset_player_elos():
+    """Resetea todos los jugadores a ELO 1000 y matches_played 0 para recalcular desde cero."""
+    await _execute("UPDATE players SET elo = 1000.0, matches_played = 0")
+
+
+async def set_player_matches_played(player_id: int, matches: int):
+    await _execute("UPDATE players SET matches_played = ? WHERE id = ?", [matches, player_id])
+
+
+async def bulk_update_player_elos(updates: list[dict]):
+    """
+    Update ELO and matches_played for multiple players in a single batch.
+    Each item in updates must have: {"id": int, "elo": float, "matches": int}
+    """
+    import libsql_client as _lc
+    statements = [
+        _lc.Statement(
+            "UPDATE players SET elo = ?, matches_played = ? WHERE id = ?",
+            [u["elo"], u["matches"], u["id"]],
+        )
+        for u in updates
+    ]
+    await _batch(statements)
+
+
 # --- Matches ---
 
 async def add_match(team_a: list[str], team_b: list[str], score_a: int, score_b: int, notes: Optional[str] = None, date: Optional[str] = None) -> int:
@@ -168,6 +193,10 @@ async def get_all_matches() -> list[dict]:
         d["team_b"] = json.loads(d["team_b"])
         results.append(d)
     return results
+
+
+async def delete_match(match_id: int):
+    await _execute("DELETE FROM matches WHERE id = ?", [match_id])
 
 
 # --- Comments ---

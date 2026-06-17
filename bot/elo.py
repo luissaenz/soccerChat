@@ -1,5 +1,5 @@
 import math
-from bot.db import get_player_by_name, update_player_elo, get_all_players
+from bot.db import get_player_by_name, update_player_elo, get_all_players, reset_player_elos, get_all_matches, set_player_matches_played, bulk_update_player_elos
 
 K_FACTOR = 32
 
@@ -61,6 +61,65 @@ async def update_elos_for_match(team_a_names: list[str], team_b_names: list[str]
         exp = expected_score(p["elo"], avg_elo_a)
         new_elo = calculate_new_elo(p["elo"], exp, actual_b, gd_mult)
         await update_player_elo(p["id"], round(new_elo, 1))
+
+
+async def recalculate_all_elos() -> dict[str, dict]:
+    """
+    Recalcula TODOS los ELOs desde cero usando el historial de partidos en la DB.
+    Proceso determinista: parte desde 1000 para todos y aplica los partidos en orden cronológico.
+    Retorna un dict {nombre_lower: {"elo": float, "matches": int}} con el estado final.
+    """
+    await reset_player_elos()
+
+    all_matches = await get_all_matches()
+    # Ordenar cronológicamente (más viejo primero)
+    all_matches = sorted(all_matches, key=lambda m: m["date"])
+
+    players = await get_all_players()
+    # Estado en memoria: {nombre_lower: {"id": int, "name": str, "elo": float, "matches": int}}
+    state: dict[str, dict] = {
+        p["name"].lower(): {"id": p["id"], "name": p["name"], "elo": 1000.0, "matches": 0}
+        for p in players
+    }
+
+    for match in all_matches:
+        team_a_names = [n for n in match["team_a"] if n.lower() in state]
+        team_b_names = [n for n in match["team_b"] if n.lower() in state]
+
+        if not team_a_names or not team_b_names:
+            continue
+
+        avg_elo_a = sum(state[n.lower()]["elo"] for n in team_a_names) / len(team_a_names)
+        avg_elo_b = sum(state[n.lower()]["elo"] for n in team_b_names) / len(team_b_names)
+
+        score_a = match["score_a"]
+        score_b = match["score_b"]
+        goal_diff = abs(score_a - score_b)
+        gd_mult = goal_diff_multiplier(goal_diff)
+
+        if score_a > score_b:
+            actual_a, actual_b = 1.0, 0.0
+        elif score_a < score_b:
+            actual_a, actual_b = 0.0, 1.0
+        else:
+            actual_a, actual_b = 0.5, 0.5
+
+        for name in team_a_names:
+            key = name.lower()
+            exp = expected_score(state[key]["elo"], avg_elo_b)
+            state[key]["elo"] = round(state[key]["elo"] + K_FACTOR * gd_mult * (actual_a - exp), 1)
+            state[key]["matches"] += 1
+
+        for name in team_b_names:
+            key = name.lower()
+            exp = expected_score(state[key]["elo"], avg_elo_a)
+            state[key]["elo"] = round(state[key]["elo"] + K_FACTOR * gd_mult * (actual_b - exp), 1)
+            state[key]["matches"] += 1
+
+    # Persistir todos los resultados en una sola transacción batch
+    await bulk_update_player_elos(list(state.values()))
+
+    return state
 
 
 async def suggest_balanced_teams(player_names: list[str]) -> tuple[list[str], list[str], float]:

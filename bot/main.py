@@ -9,7 +9,7 @@ from bot.handlers import (
     start_command, registrar_command, jugadores_command,
     resultado_command, equipos_command, historial_command,
     alias_command, stats_command, tabla_command, analisis_command,
-    handle_message
+    recalcular_command, borrar_partido_command, handle_message
 )
 
 load_dotenv()
@@ -49,6 +49,8 @@ def main():
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("tabla", tabla_command))
     app.add_handler(CommandHandler("analisis", analisis_command))
+    app.add_handler(CommandHandler("recalcular", recalcular_command))
+    app.add_handler(CommandHandler("borrar_partido", borrar_partido_command))
 
     # Mensajes de texto (no comandos)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

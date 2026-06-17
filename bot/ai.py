@@ -175,13 +175,15 @@ Si el mensaje describe un partido con equipos y resultado, respondé con este JS
 
 Reglas:
 - team_a y team_b deben contener los NOMBRES de los jugadores (no apodos del equipo).
+- FORMATO CON ENCABEZADOS: Si el mensaje lista jugadores bajo secciones como "Equipo oscuro:", "Equipo Claro:", "Team oscuro", etc., identificá cada sección como un equipo. Los nombres pueden ir uno por línea o separados por comas.
 - RESOLUCIÓN DE NOMBRES: Si un nombre en el mensaje es una variación obvia de un jugador registrado (diminutivo, apodo, con/sin acento, abreviación), usá el nombre CANÓNICO registrado.
   Ejemplos: "Facu" o "Facundiño" → "Facundo", "Gonza" → "Gonzalo", "Estebancho" → "Esteban", "Dani" → "Daniel", "Rober" → "Roberto", "Cris" → "Christian".
 - Si un nombre tiene un alias explícito en la lista de aliases, usá el nombre canónico.
 - Si aparece un nombre que NO podés asociar con certeza a ningún jugador registrado, agregalo a la lista "unknown_names" para preguntar.
-- Si dice "ganó Claro" o "ganó Oscuro" o similar, asegurate de que el score refleje eso.
+- Si dice "ganó Claro" o "ganó Oscuro" o similar, asegurate de que el score refleje eso. El equipo ganador debe tener score mayor.
 - Si no hay score explícito pero dice quién ganó, poné 1-0.
-- Si dice "ganó por X goles" sin score exacto, poné X-0.
+- Si dice "ganó por X goles" sin score exacto, poné X-0. Asegurate que el equipo mencionado como ganador tenga el score mayor.
+- Si dice "ganó el equipo oscuro por X goles", team_a_label será "Oscuro" con score_a=X, score_b=0.
 - reply: debe ser sarcástico, en español rioplatense, breve (1-2 oraciones).
 
 Si HAY nombres que no podés resolver, respondé:

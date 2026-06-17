@@ -6,9 +6,10 @@ from bot.db import (
     add_player, get_all_players, get_player_by_name,
     add_match, get_recent_matches, add_comment,
     add_alias, get_aliases_for_player,
-    link_telegram_to_player, get_player_by_telegram_id
+    link_telegram_to_player, get_player_by_telegram_id,
+    delete_match
 )
-from bot.elo import update_elos_for_match, suggest_balanced_teams
+from bot.elo import update_elos_for_match, suggest_balanced_teams, recalculate_all_elos
 from bot.ai import chat, analyze_comment, detect_match_result
 from bot.analyst import format_player_report, format_full_leaderboard, analyst_chat
 
@@ -25,7 +26,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/alias <nombre> <apodo> - Registrar alias\n"
         "/stats <nombre> - Ficha estadística de un jugador 📊\n"
         "/tabla - Tabla de posiciones con stats completas 📈\n"
-        "/analisis <pregunta> - Preguntale al Analista 🧠\n\n"
+        "/analisis <pregunta> - Preguntale al Analista 🧠\n"
+        "/recalcular - Recalcular todos los ELOs desde el historial 🔄\n"
+        "/borrar_partido <id> - Eliminar un partido por ID 🗑️\n\n"
         "También pueden escribir los equipos y resultado en texto libre y yo los registro.\n"
         "Mencionenme o digan 'mister' y les contesto con la verdad que no quieren escuchar. 😏\n"
         "Digan 'analista' y responde El Analista con datos fríos. 📊"
@@ -156,7 +159,7 @@ async def historial_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for m in matches:
         team_a_str = ", ".join(m["team_a"])
         team_b_str = ", ".join(m["team_b"])
-        lines.append(f"📅 {m['date'][:10]}: [{team_a_str}] {m['score_a']}-{m['score_b']} [{team_b_str}]")
+        lines.append(f"📅 #{m['id']} {m['date'][:10]}: [{team_a_str}] {m['score_a']}-{m['score_b']} [{team_b_str}]")
 
     await update.message.reply_text("📋 *ÚLTIMOS PARTIDOS*\n\n" + "\n".join(lines), parse_mode="Markdown")
 
@@ -208,6 +211,34 @@ async def tabla_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Tabla de posiciones con stats completas."""
     table = await format_full_leaderboard()
     await update.message.reply_text(table, parse_mode="Markdown")
+
+
+async def borrar_partido_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Elimina un partido por ID: /borrar_partido <id>"""
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text("Formato: /borrar_partido <id>\nUsá /historial para ver los IDs.")
+        return
+    match_id = int(context.args[0])
+    await delete_match(match_id)
+    await update.message.reply_text(
+        f"🗑️ Partido #{match_id} eliminado.\n"
+        f"Usá /recalcular para recalcular los ELOs desde el historial actualizado."
+    )
+
+
+async def recalcular_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recalcula todos los ELOs desde cero usando el historial de partidos en DB."""
+    await update.message.reply_text("⏳ Recalculando ELOs desde el historial de partidos...")
+    state = await recalculate_all_elos()
+    recalculated = sorted(state.values(), key=lambda x: x["elo"], reverse=True)
+    lines = [
+        f"  {i}. {e['name']} — ELO: {e['elo']:.0f} ({e['matches']} partidos)"
+        for i, e in enumerate(recalculated, 1)
+    ]
+    await update.message.reply_text(
+        "✅ *ELOs recalculados desde cero* (historial completo)\n\n" + "\n".join(lines),
+        parse_mode="Markdown"
+    )
 
 
 async def analisis_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -319,6 +350,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"📊 Resultado: {match_result['score_a']} - {match_result['score_b']}\n\n"
                 f"🎙️ _{match_result['reply']}_\n\n"
                 f"ELOs actualizados. Usá /jugadores para ver el ranking.",
+                parse_mode="Markdown"
+            )
+            return
+
+        # Si el mensaje parece un partido pero no se pudo parsear, avisar
+        text_lower_check = text.lower()
+        looks_like_match = (
+            any(kw in text_lower_check for kw in ["equipo oscuro", "equipo claro", "team oscuro", "team claro"])
+            and any(kw in text_lower_check for kw in ["ganó", "gano", "goles", "resultado"])
+        )
+        if looks_like_match:
+            await message.reply_text(
+                "🤔 Parece un resultado de partido pero no pude parsearlo bien.\n"
+                "Probá con el formato:\n"
+                "`/resultado JugA,JugB,JugC 8 - JugD,JugE,JugF 0`\n"
+                "O volvé a escribir el mensaje mencionando a *Mister* para que lo intente de nuevo.",
                 parse_mode="Markdown"
             )
             return
