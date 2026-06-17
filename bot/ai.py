@@ -182,8 +182,10 @@ Reglas:
 - Si aparece un nombre que NO podés asociar con certeza a ningún jugador registrado, agregalo a la lista "unknown_names" para preguntar.
 - Si dice "ganó Claro" o "ganó Oscuro" o similar, asegurate de que el score refleje eso. El equipo ganador debe tener score mayor.
 - Si no hay score explícito pero dice quién ganó, poné 1-0.
-- Si dice "ganó por X goles" sin score exacto, poné X-0. Asegurate que el equipo mencionado como ganador tenga el score mayor.
-- Si dice "ganó el equipo oscuro por X goles", team_a_label será "Oscuro" con score_a=X, score_b=0.
+- Si dice "ganó por X goles" sin score exacto, el score del ganador es X y el perdedor 0. Ejemplo: "ganó el oscuro por 8 goles" → el oscuro tiene score=8, el claro score=0.
+- Si dice "ganó el equipo oscuro por X goles": score del oscuro=X, score del claro=0.
+- Si dice "ganó el equipo claro por X goles": score del claro=X, score del oscuro=0.
+- NUNCA uses 1-0 si hay un número de goles explícito en el mensaje.
 - reply: debe ser sarcástico, en español rioplatense, breve (1-2 oraciones).
 
 Si HAY nombres que no podés resolver, respondé:
@@ -227,8 +229,8 @@ async def detect_match_result(message: str, author: str) -> dict | None:
             players=", ".join(player_names) if player_names else "Ninguno registrado aún",
             aliases=aliases_str,
         )}],
-        "max_tokens": 400,
-        "temperature": 0.3,
+        "max_tokens": 600,
+        "temperature": 0.1,
     }
 
     try:
