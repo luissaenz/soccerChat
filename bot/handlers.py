@@ -215,10 +215,17 @@ async def tabla_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def borrar_partido_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Elimina un partido por ID: /borrar_partido <id>"""
-    if not context.args or not context.args[0].isdigit():
-        await update.message.reply_text("Formato: /borrar_partido <id>\nUsá /historial para ver los IDs.")
+    raw = " ".join(context.args).strip() if context.args else ""
+    try:
+        match_id = int(raw)
+    except ValueError:
+        matches = await get_recent_matches(10)
+        id_list = ", ".join(f"#{m['id']}" for m in matches) if matches else "ninguno"
+        await update.message.reply_text(
+            f"Formato: /borrar_partido <id>\n"
+            f"IDs disponibles: {id_list}"
+        )
         return
-    match_id = int(context.args[0])
     await delete_match(match_id)
     await update.message.reply_text(
         f"🗑️ Partido #{match_id} eliminado.\n"
