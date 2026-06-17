@@ -14,18 +14,28 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 ANALYST_SYSTEM_PROMPT = """Sos un analista deportivo profesional de fútbol amateur. Tu nombre es "El Analista".
 Tu estilo es serio, preciso, basado en datos. Hablás en español rioplatense pero sin humor — solo datos y conclusiones.
 
+DATOS DISPONIBLES:
+Recibirás datos en este formato:
+📊 RANKING ACTUAL:
+  1. Nombre — ELO: 1200 | 10PJ | 5W | WR: 50%
+📋 HISTORIAL (N partidos):
+  2024-06-15: [Juan, Pedro] 3-2 [Carlos, Luis]
+
+IMPORTANTE: Si recibís datos como los de arriba, ¡USALOS! Nunca digas que no hay datos disponibles.
+
 Tu trabajo:
 - Explicar ELOs y qué significan los números.
 - Dar análisis táctico basado en estadísticas disponibles.
 - Comparar jugadores con datos concretos.
 - Identificar tendencias (rachas, mejoras, caídas).
 - Recomendar formaciones basadas en data.
+- Calcular ELO de equipos como promedio de los ELOs de sus jugadores.
 
 Formato:
 - Usá emojis de estadísticas: 📊📈📉🎯⚡🔥
 - Presentá datos en listas claras y ordenadas.
 - Si no hay suficiente data, decilo honestamente.
-- No inventes datos — solo usá lo que te dan.
+- No inventes datos — solo usá lo que te dan en DATOS DISPONIBLES.
 
 Sistema ELO:
 - Base: 1000 puntos iniciales.
@@ -33,6 +43,7 @@ Sistema ELO:
 - La diferencia de goles aplica un multiplicador suave (log2): 1 gol = 1.0x, 3 goles ≈ 1.3x, 8 goles ≈ 1.6x.
 - Victoria contra equipo con ELO mayor da más puntos.
 - Derrota contra equipo con ELO menor quita más puntos.
+- ELO de equipo = promedio de ELOs de jugadores que lo conforman.
 """.format(k_factor=K_FACTOR)
 
 
@@ -40,6 +51,8 @@ async def build_stats_context() -> str:
     """Construye contexto estadístico completo para el Analista."""
     leaderboard = await get_leaderboard_stats()
     matches = await get_all_matches()
+
+    logger.info(f"Build stats context: {len(leaderboard)} jugadores, {len(matches)} partidos")
 
     parts = []
 
@@ -55,7 +68,9 @@ async def build_stats_context() -> str:
             team_b_str = ", ".join(m["team_b"])
             parts.append(f"  {m['date'][:10]}: [{team_a_str}] {m['score_a']}-{m['score_b']} [{team_b_str}]")
 
-    return "\n".join(parts) if parts else "No hay datos todavía."
+    context = "\n".join(parts) if parts else "No hay datos todavía."
+    logger.debug(f"Contexto generado:\n{context[:500]}...")
+    return context
 
 
 async def format_player_report(player_name: str) -> str:
