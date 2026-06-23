@@ -405,6 +405,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Quitar prefijos como "1.", "2 ", "- ", "• " etc.
             clean_line = re.sub(r"^[\d]+[\.\):\-\s]+", "", line).strip()
             clean_line = re.sub(r"^[\-\•\*]\s*", "", clean_line).strip()
+            # Quitar caracteres invisibles Unicode (zero-width space, word joiner, etc.)
+            clean_line = re.sub(r"[\u200b\u200c\u200d\u2060\ufeff\u00ad]", "", clean_line).strip()
             # Ignorar la línea del pedido en sí
             if any(kw in clean_line.lower() for kw in team_request_keywords + ["mister", "arma", "sortea"]):
                 continue
