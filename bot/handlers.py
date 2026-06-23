@@ -389,6 +389,54 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Limpiar la mención del texto
     clean_text = text.replace(f"@{bot_username}", "").strip() if bot_username else text
 
+    # Detectar pedido de armado de equipos en texto libre
+    team_request_keywords = ["arma ", "armar ", "sortea ", "sortear ", "divide ", "dividí ", "hacer equipos", "arma equipos", "arma 2 equipos", "hace los equipos"]
+    is_team_request = any(kw in clean_text.lower() for kw in team_request_keywords)
+    if is_team_request:
+        # Extraer nombres: líneas con número/bullet seguido de nombre, o simplemente líneas no vacías tras la primera
+        lines = clean_text.splitlines()
+        extracted = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            # Quitar prefijos como "1.", "2 ", "- ", "• " etc.
+            clean_line = re.sub(r"^[\d]+[\.\):\-\s]+", "", line).strip()
+            clean_line = re.sub(r"^[\-\•\*]\s*", "", clean_line).strip()
+            # Ignorar la línea del pedido en sí
+            if any(kw in clean_line.lower() for kw in team_request_keywords + ["mister", "arma", "sortea"]):
+                continue
+            if clean_line and len(clean_line) > 1:
+                extracted.append(clean_line)
+
+        if len(extracted) >= 4:
+            # Resolver nombres contra DB (por nombre o alias)
+            resolved = []
+            unknown_names = []
+            for name in extracted:
+                p = await get_player_by_name(name)
+                if p:
+                    resolved.append(p["name"])
+                else:
+                    unknown_names.append(name)
+
+            if unknown_names:
+                await message.reply_text(
+                    f"🤔 No reconozco a estos jugadores: *{', '.join(unknown_names)}*\n"
+                    f"Registralos con /registrar o agregá un alias con /alias.",
+                    parse_mode="Markdown"
+                )
+                return
+
+            team_a, team_b, diff = await suggest_balanced_teams(resolved)
+            msg = (
+                f"⚖️ *Equipos sugeridos* (diferencia ELO: {diff:.0f})\n\n"
+                f"🔵 *Equipo A:*\n" + "\n".join(f"  • {p}" for p in team_a) +
+                f"\n\n🔴 *Equipo B:*\n" + "\n".join(f"  • {p}" for p in team_b)
+            )
+            await message.reply_text(msg, parse_mode="Markdown")
+            return
+
     # Intentar identificar al usuario por su Telegram ID
     linked_player = await get_player_by_telegram_id(message.from_user.id)
     if linked_player:
