@@ -323,9 +323,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             return
 
-    # Detección de partido: corre siempre, sin importar si mencionaron a mister
+    # Detección de partido: corre siempre, excepto cuando es claramente un pedido de equipos
+    _team_kws = ["arma ", "armar ", "sortea ", "sortear ", "divide ", "dividí ", "hacer equipos", "arma equipos", "arma 2 equipos", "hace los equipos"]
+    _is_team_req_early = any(kw in text_lower for kw in _team_kws)
     user_name_detect = message.from_user.first_name or message.from_user.username or "Anónimo"
-    match_result = await detect_match_result(text, user_name_detect)
+    match_result = None if _is_team_req_early else await detect_match_result(text, user_name_detect)
     if match_result:
         if match_result.get("needs_clarification"):
             unknown = match_result["unknown_names"]
