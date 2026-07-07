@@ -1,5 +1,5 @@
 import math
-from bot.db import get_player_by_name, update_player_elo, get_all_players, reset_player_elos, get_all_matches, set_player_matches_played, bulk_update_player_elos
+from bot.db import get_player_by_name, update_player_elo, get_all_players, reset_player_elos, get_all_matches, set_player_matches_played, bulk_update_player_elos, get_all_adjustment_sums
 
 K_FACTOR = 32
 
@@ -67,6 +67,8 @@ async def recalculate_all_elos() -> dict[str, dict]:
     """
     Recalcula TODOS los ELOs desde cero usando el historial de partidos en la DB.
     Proceso determinista: parte desde 1000 para todos y aplica los partidos en orden cronológico.
+    Al final reaplica la suma neta de ajustes por comentarios (tabla elo_adjustments)
+    para que el recálculo no los pierda.
     Retorna un dict {nombre_lower: {"elo": float, "matches": int}} con el estado final.
     """
     await reset_player_elos()
@@ -115,6 +117,12 @@ async def recalculate_all_elos() -> dict[str, dict]:
             exp = expected_score(state[key]["elo"], avg_elo_a)
             state[key]["elo"] = round(state[key]["elo"] + K_FACTOR * gd_mult * (actual_b - exp), 1)
             state[key]["matches"] += 1
+
+    # Reaplicar ajustes por comentarios para no perderlos en el recálculo
+    adjustment_sums = await get_all_adjustment_sums()
+    for entry in state.values():
+        if entry["id"] in adjustment_sums:
+            entry["elo"] = round(entry["elo"] + adjustment_sums[entry["id"]], 1)
 
     # Persistir todos los resultados en una sola transacción batch
     await bulk_update_player_elos(list(state.values()))

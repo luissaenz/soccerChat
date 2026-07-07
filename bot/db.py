@@ -85,6 +85,15 @@ async def init_db():
             alias TEXT NOT NULL,
             FOREIGN KEY (player_id) REFERENCES players(id)
         )""",
+        """CREATE TABLE IF NOT EXISTS elo_adjustments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_id INTEGER NOT NULL,
+            delta REAL NOT NULL,
+            reason TEXT,
+            author TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (player_id) REFERENCES players(id)
+        )""",
     ]
     await _batch(stmts)
 
@@ -235,6 +244,39 @@ async def get_all_aliases() -> list[dict]:
         "SELECT a.alias, p.name as canonical_name FROM aliases a JOIN players p ON a.player_id = p.id"
     )
     return _rs_to_dicts(rs)
+
+
+# --- Ajustes de ELO por comentarios (auditables) ---
+
+async def add_elo_adjustment(player_id: int, delta: float, reason: str, author: str) -> int:
+    rs = await _execute(
+        "INSERT INTO elo_adjustments (player_id, delta, reason, author) VALUES (?, ?, ?, ?)",
+        [player_id, delta, reason, author]
+    )
+    return rs.last_insert_rowid
+
+
+async def get_adjustment_abs_sum_today(player_id: int) -> float:
+    """Suma de |delta| aplicados hoy a un jugador, para el cap diario."""
+    rs = await _execute(
+        "SELECT COALESCE(SUM(ABS(delta)), 0) AS total FROM elo_adjustments "
+        "WHERE player_id = ? AND date(created_at) = date('now')",
+        [player_id]
+    )
+    row = _rs_first(rs)
+    return float(row["total"]) if row else 0.0
+
+
+async def get_all_adjustment_sums() -> dict[int, float]:
+    """Suma neta de ajustes por jugador, para reaplicar tras un recálculo de ELOs.
+    Devuelve {} si la tabla todavía no existe (DB previa a init_db con elo_adjustments)."""
+    try:
+        rs = await _execute(
+            "SELECT player_id, SUM(delta) AS total FROM elo_adjustments GROUP BY player_id"
+        )
+    except Exception:
+        return {}
+    return {row["player_id"]: float(row["total"]) for row in _rs_to_dicts(rs)}
 
 
 # --- Stats / Analytics ---

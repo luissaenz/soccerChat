@@ -1,9 +1,9 @@
 import os
-import json
 import logging
+from datetime import datetime
 import httpx
-from bot.db import get_player_stats, get_leaderboard_stats, get_all_matches, get_all_players
-from bot.elo import K_FACTOR, goal_diff_multiplier
+from bot.db import get_player_stats, get_leaderboard_stats, get_all_matches
+from bot.elo import K_FACTOR
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,27 @@ Sistema ELO:
 """.format(k_factor=K_FACTOR)
 
 
+def _recent_form(names: list[str], matches: list[dict], n: int = 3) -> dict[str, str]:
+    """Últimos n resultados por jugador (más reciente primero), ej: 'W-W-L'.
+    matches debe venir ordenado por fecha descendente."""
+    form: dict[str, list[str]] = {name: [] for name in names}
+    for m in matches:
+        team_a_lower = [x.lower() for x in m["team_a"]]
+        team_b_lower = [x.lower() for x in m["team_b"]]
+        for name, results in form.items():
+            if len(results) >= n:
+                continue
+            name_lower = name.lower()
+            if name_lower in team_a_lower:
+                my_score, opp_score = m["score_a"], m["score_b"]
+            elif name_lower in team_b_lower:
+                my_score, opp_score = m["score_b"], m["score_a"]
+            else:
+                continue
+            results.append("W" if my_score > opp_score else "L" if my_score < opp_score else "D")
+    return {name: "-".join(r) for name, r in form.items() if r}
+
+
 async def build_stats_context() -> str:
     """Construye contexto estadístico completo para el Analista."""
     leaderboard = await get_leaderboard_stats()
@@ -62,11 +83,18 @@ async def build_stats_context() -> str:
             parts.append(f"  {i}. {p['name']} — ELO: {p['elo']} | {p['matches']}PJ | {p['wins']}W | WR: {p['winrate']}%")
 
     if matches:
-        parts.append(f"\n📋 HISTORIAL ({len(matches)} partidos):")
-        for m in matches[:10]:
+        shown = matches[:10]
+        parts.append(f"\n📋 HISTORIAL (mostrando los {len(shown)} más recientes de {len(matches)} partidos en total):")
+        for m in shown:
             team_a_str = ", ".join(m["team_a"])
             team_b_str = ", ".join(m["team_b"])
             parts.append(f"  {m['date'][:10]}: [{team_a_str}] {m['score_a']}-{m['score_b']} [{team_b_str}]")
+
+        form = _recent_form([p["name"] for p in leaderboard], matches)
+        if form:
+            parts.append("\n🔥 FORMA RECIENTE (últimos 3 partidos, más reciente primero):")
+            for name, results in form.items():
+                parts.append(f"  {name}: {results}")
 
     context = "\n".join(parts) if parts else "No hay datos todavía."
     logger.debug(f"Contexto generado:\n{context[:500]}...")
@@ -130,7 +158,7 @@ async def analyst_chat(question: str) -> str:
         "model": OPENROUTER_MODEL,
         "messages": [
             {"role": "system", "content": ANALYST_SYSTEM_PROMPT},
-            {"role": "user", "content": f"DATOS DISPONIBLES:\n{context}\n\nPREGUNTA: {question}"},
+            {"role": "user", "content": f"Fecha actual: {datetime.now().strftime('%Y-%m-%d')}\n\nDATOS DISPONIBLES:\n{context}\n\nPREGUNTA: {question}"},
         ],
         "max_tokens": 600,
         "temperature": 0.3,

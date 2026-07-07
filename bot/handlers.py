@@ -1,4 +1,3 @@
-import json
 import re
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -10,8 +9,19 @@ from bot.db import (
     delete_match
 )
 from bot.elo import update_elos_for_match, suggest_balanced_teams, recalculate_all_elos
-from bot.ai import chat, analyze_comment, detect_match_result
+from bot.ai import chat, analyze_group_message
 from bot.analyst import format_player_report, format_full_leaderboard, analyst_chat
+
+# Señales de pedido de armado de equipos en texto libre (única fuente)
+TEAM_REQUEST_KEYWORDS = [
+    "arma ", "armar ", "sortea ", "sortear ", "divide ", "dividí ",
+    "hacer equipos", "arma equipos", "arma 2 equipos", "hace los equipos",
+]
+
+
+def _sanitize_markdown(text: str) -> str:
+    """Quita caracteres que rompen el parse_mode Markdown de Telegram."""
+    return text.replace("*", "").replace("_", "").replace("`", "")
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -137,7 +147,7 @@ async def equipos_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Armé estos equipos: {', '.join(team_a)} vs {', '.join(team_b)}. "
         f"La diferencia de ELO es {diff}. Hacé un comentario breve y sarcástico sobre los equipos."
     )
-    ai_comment = await chat(ai_prompt, "Sistema")
+    ai_comment = _sanitize_markdown(await chat(ai_prompt, "Sistema"))
 
     await update.message.reply_text(
         f"⚽ *EQUIPOS ARMADOS*\n\n"
@@ -323,15 +333,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             return
 
-    # Detección de partido: corre siempre, excepto cuando es claramente un pedido de equipos
-    _team_kws = ["arma ", "armar ", "sortea ", "sortear ", "divide ", "dividí ", "hacer equipos", "arma equipos", "arma 2 equipos", "hace los equipos"]
-    _is_team_req_early = any(kw in text_lower for kw in _team_kws)
+    # Clasificación unificada (partido o comentario de rendimiento): UNA llamada
+    # LLM con pre-filtro barato adentro. Se saltea si es un pedido de equipos.
+    _is_team_req_early = any(kw in text_lower for kw in TEAM_REQUEST_KEYWORDS)
     user_name_detect = message.from_user.first_name or message.from_user.username or "Anónimo"
-    match_result = None if _is_team_req_early else await detect_match_result(text, user_name_detect)
-    if match_result:
-        if match_result.get("needs_clarification"):
-            unknown = match_result["unknown_names"]
-            question = match_result["question"]
+    result = None if _is_team_req_early else await analyze_group_message(
+        text, user_name_detect, message.from_user.id
+    )
+
+    if result:
+        if result["kind"] == "clarification":
+            unknown = result["unknown_names"]
+            question = result["question"]
             await message.reply_text(
                 f"🤔 Detecté un partido pero no reconozco a: *{', '.join(unknown)}*\n\n"
                 f"{question}\n\n"
@@ -343,31 +356,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        await message.reply_text(
-            f"⚽ *Partido #{match_result['match_id']} registrado!*\n\n"
-            f"🔵 *{match_result['label_a']}:* {', '.join(match_result['team_a'])}\n"
-            f"🔴 *{match_result['label_b']}:* {', '.join(match_result['team_b'])}\n"
-            f"📊 Resultado: {match_result['score_a']} - {match_result['score_b']}\n\n"
-            f"🎙️ _{match_result['reply']}_\n\n"
-            f"ELOs actualizados. Usá /jugadores para ver el ranking.",
-            parse_mode="Markdown"
-        )
-        return
+        if result["kind"] == "match":
+            await message.reply_text(
+                f"⚽ *Partido #{result['match_id']} registrado!*\n\n"
+                f"🔵 *{result['label_a']}:* {', '.join(result['team_a'])}\n"
+                f"🔴 *{result['label_b']}:* {', '.join(result['team_b'])}\n"
+                f"📊 Resultado: {result['score_a']} - {result['score_b']}\n\n"
+                f"🎙️ _{_sanitize_markdown(result['reply'])}_\n\n"
+                f"ELOs actualizados. Usá /jugadores para ver el ranking.",
+                parse_mode="Markdown"
+            )
+            return
+
+        if result["kind"] == "performance":
+            await add_comment(
+                player_telegram_id=message.from_user.id,
+                player_name=user_name_detect,
+                content=text
+            )
+            adj_lines = [f"  {a['player']} {a['delta']:+d} ({a['reason']})" for a in result["adjustments"]]
+            await message.reply_text(
+                f"🎙️ {result['reply']}\n\n📊 ELO actualizado:\n" + "\n".join(adj_lines)
+            )
+            return
 
     if not is_mention and not is_mister and not is_reply_to_bot:
         # Guardar como comentario para contexto futuro
-        user_name = message.from_user.first_name or message.from_user.username or "Anónimo"
         await add_comment(
             player_telegram_id=message.from_user.id,
-            player_name=user_name,
+            player_name=user_name_detect,
             content=text
         )
 
         # Si el mensaje parece un partido pero no se pudo parsear, avisar
-        text_lower_check = text.lower()
         looks_like_match = (
-            any(kw in text_lower_check for kw in ["equipo oscuro", "equipo claro", "team oscuro", "team claro"])
-            and any(kw in text_lower_check for kw in ["ganó", "gano", "goles", "resultado"])
+            any(kw in text_lower for kw in ["equipo oscuro", "equipo claro", "team oscuro", "team claro"])
+            and any(kw in text_lower for kw in ["ganó", "gano", "goles", "resultado"])
         )
         if looks_like_match:
             await message.reply_text(
@@ -377,23 +401,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "O volvé a escribir el mensaje mencionando a *Mister* para que lo intente de nuevo.",
                 parse_mode="Markdown"
             )
-            return
-
-        # Analizar si el comentario habla de rendimiento y ajustar ELO
-        result = await analyze_comment(text, user_name)
-        if result:
-            adj_lines = [f"  {a['player']} {a['delta']:+d} ({a['reason']})" for a in result["adjustments"]]
-            await message.reply_text(
-                f"🎙️ {result['reply']}\n\n📊 ELO actualizado:\n" + "\n".join(adj_lines)
-            )
         return
 
     # Limpiar la mención del texto
     clean_text = text.replace(f"@{bot_username}", "").strip() if bot_username else text
 
     # Detectar pedido de armado de equipos en texto libre
-    team_request_keywords = ["arma ", "armar ", "sortea ", "sortear ", "divide ", "dividí ", "hacer equipos", "arma equipos", "arma 2 equipos", "hace los equipos"]
-    is_team_request = any(kw in clean_text.lower() for kw in team_request_keywords)
+    is_team_request = any(kw in clean_text.lower() for kw in TEAM_REQUEST_KEYWORDS)
     if is_team_request:
         # Extraer nombres: líneas con número/bullet seguido de nombre, o simplemente líneas no vacías tras la primera
         lines = clean_text.splitlines()
@@ -408,7 +422,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Quitar caracteres invisibles Unicode (zero-width space, word joiner, etc.)
             clean_line = re.sub(r"[\u200b\u200c\u200d\u2060\ufeff\u00ad]", "", clean_line).strip()
             # Ignorar la línea del pedido en sí
-            if any(kw in clean_line.lower() for kw in team_request_keywords + ["mister", "arma", "sortea"]):
+            if any(kw in clean_line.lower() for kw in TEAM_REQUEST_KEYWORDS + ["mister", "arma", "sortea"]):
                 continue
             if clean_line and len(clean_line) > 1:
                 extracted.append(clean_line)
@@ -455,6 +469,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         content=clean_text
     )
 
+    # Si es reply a un mensaje del bot, pasarle ese mensaje como contexto
+    reply_context = (
+        message.reply_to_message.text
+        if is_reply_to_bot and message.reply_to_message.text
+        else None
+    )
+
     # Generar respuesta con IA (usa nombre real del jugador si está vinculado)
-    response = await chat(clean_text, user_name)
+    response = await chat(clean_text, user_name, reply_context=reply_context)
     await message.reply_text(response)
